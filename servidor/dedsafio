@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Manejo del servidor Dedsafío. Uso: dedsafio <orden>   (dedsafio ayuda)
+BASE=/opt/dedsafio; SRV=$BASE/servidor; RESP=$BASE/respaldos; USUARIO=minecraft
+DESCARGAS_REPO=Frankgamer1534/SammyMod-Descargas
+VERSION_MC=26.2
+como_mc() { if [ "$(id -un)" = "$USUARIO" ]; then SHELL=/bin/bash "$@"; else sudo -u $USUARIO env SHELL=/bin/bash "$@"; fi; }
+enviar() { como_mc tmux -L dedsafio send-keys -t dedsafio "$*" Enter 2>/dev/null; }
+corriendo() { como_mc tmux -L dedsafio has-session -t dedsafio 2>/dev/null; }
+avisar_y_parar() {
+  if corriendo; then
+    enviar "say §d$1"; sleep 10
+  fi
+  sudo systemctl stop dedsafio
+}
+copia_mundo() {
+  # copia rápida del mundo actual antes de cambiarlo
+  sudo mkdir -p "$RESP"
+  if [ -d "$SRV/world" ]; then
+    F="$RESP/mundo-antes-de-cambiar-$(date +%Y-%m-%d_%H-%M).tar.gz"
+    sudo tar -czf "$F" -C "$SRV" world && echo "Copia del mundo anterior: $F"
+  fi
+}
+case "${1:-ayuda}" in
+  estado)
+    systemctl --no-pager status dedsafio | head -5
+    echo; free -h | head -2; echo; df -h "$SRV" | tail -1
+    systemctl is-active --quiet playit 2>/dev/null && echo "playit: activo" || echo "playit: apagado"
+    echo; echo "Mods:"; ls -1 "$SRV/mods";;
+  consola)
+    echo "Entrando a la consola. Para SALIR sin apagar el servidor: Ctrl+B y luego D."; sleep 2
+    como_mc tmux -L dedsafio attach -t dedsafio;;
+  comando)
+    shift; enviar "$*" && echo "Enviado: $*";;
+  iniciar)   sudo systemctl start dedsafio;;
+  parar)     sudo systemctl stop dedsafio;;
+  reiniciar) sudo systemctl restart dedsafio;;
+  log)       tail -n "${2:-60}" -f "$SRV/logs/latest.log";;
+
+  actualizar)
+    echo "Buscando la última versión del mod..."
+    URL=$(curl -fsSL "https://api.github.com/repos/$DESCARGAS_REPO/releases?per_page=10" | jq -r '[.[].assets[] | select(.name|endswith(".jar"))][0].browser_download_url')
+    if [ -z "$URL" ] || [ "$URL" = "null" ]; then echo "No encontré el mod en $DESCARGAS_REPO"; exit 1; fi
+    NOMBRE=$(basename "$URL")
+    curl -fsSL -o "/tmp/$NOMBRE" "$URL" || { echo "No se pudo descargar."; exit 1; }
+    sudo find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' -delete
+    sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
+    echo "Mod actualizado: $NOMBRE. Reiniciando el servidor..."
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos para actualizar el mod."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo.";;
+
+  instalar-mod)
+    # dedsafio instalar-mod <nombre-en-modrinth>   (ej: meowanti-xray)
+    SLUG="${2:-}"; [ -z "$SLUG" ] && { echo "Uso: dedsafio instalar-mod <nombre-en-modrinth>"; exit 1; }
+    J=$(curl -fsSL -G "https://api.modrinth.com/v2/project/$SLUG/version" \
+          --data-urlencode "game_versions=[\"$VERSION_MC\"]" --data-urlencode 'loaders=["fabric"]') || { echo "No existe '$SLUG' en Modrinth."; exit 1; }
+    URL=$(echo "$J" | jq -r '.[0].files | (map(select(.primary)) + .)[0].url // empty')
+    NOMBRE=$(echo "$J" | jq -r '.[0].files | (map(select(.primary)) + .)[0].filename // empty')
+    [ -z "$URL" ] && { echo "'$SLUG' no tiene versión para Fabric $VERSION_MC."; exit 1; }
+    curl -fsSL -o "/tmp/$NOMBRE" "$URL" || { echo "No se pudo descargar."; exit 1; }
+    sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
+    echo "Instalado: $NOMBRE. Reiniciando el servidor..."
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo.";;
+
+  quitar-mod)
+    # dedsafio quitar-mod <parte-del-nombre>
+    PATRON="${2:-}"; [ -z "$PATRON" ] && { echo "Uso: dedsafio quitar-mod <parte-del-nombre>"; ls -1 "$SRV/mods"; exit 1; }
+    if echo "$PATRON" | grep -qiE 'dedsafio|fabric-api'; then echo "Ese mod es necesario para el servidor; no lo quito."; exit 1; fi
+    ENC=$(find "$SRV/mods" -maxdepth 1 -iname "*$PATRON*.jar")
+    [ -z "$ENC" ] && { echo "No hay ningún mod con '$PATRON'."; ls -1 "$SRV/mods"; exit 1; }
+    echo "$ENC" | while read -r f; do sudo rm -f "$f"; echo "Quitado: $(basename "$f")"; done
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo.";;
+
+  mundo-nuevo)
+    # dedsafio mundo-nuevo [semilla]
+    SEMILLA="${2:-}"
+    echo "Esto guarda el mundo actual en $RESP y crea uno nuevo."
+    read -r -p "¿Seguro? escribe SI para continuar: " R; [ "$R" = "SI" ] || { echo "Cancelado."; exit 1; }
+    avisar_y_parar "El servidor se reinicia en 10 segundos para cambiar de mundo."
+    copia_mundo
+    sudo rm -rf "$SRV/world"
+    sudo sed -i "s/^level-seed=.*/level-seed=$SEMILLA/" "$SRV/server.properties"
+    grep -q '^level-seed=' "$SRV/server.properties" || echo "level-seed=$SEMILLA" | sudo tee -a "$SRV/server.properties" >/dev/null
+    sudo systemctl start dedsafio
+    echo "Listo: se está creando el mundo nuevo${SEMILLA:+ con la semilla $SEMILLA} (tarda 1-2 minutos). Míralo con: dedsafio log";;
+
+  cambiar-mundo)
+    # dedsafio cambiar-mundo <carpeta o .zip del mundo>
+    ORIGEN="${2:-}"
+    [ -z "$ORIGEN" ] || [ ! -e "$ORIGEN" ] && { echo "Uso: dedsafio cambiar-mundo <carpeta o .zip del mundo>"; exit 1; }
+    TMP=$(mktemp -d)
+    if [ -f "$ORIGEN" ]; then
+      python3 - "$ORIGEN" "$TMP" <<'PY' || { echo "No pude abrir el zip."; exit 1; }
+import os, sys, zipfile, shutil
+zip_path, destino = sys.argv[1], os.path.realpath(sys.argv[2])
+with zipfile.ZipFile(zip_path) as z:
+    for info in z.infolist():
+        nombre = info.filename.replace("\\", "/")
+        ruta = os.path.realpath(os.path.join(destino, nombre))
+        if not ruta.startswith(destino + os.sep):
+            continue
+        if nombre.endswith("/"):
+            os.makedirs(ruta, exist_ok=True); continue
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with z.open(info) as src, open(ruta, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+PY
+      BUSCAR="$TMP"
+    else
+      BUSCAR="$ORIGEN"
+    fi
+    MUNDO=$(find "$BUSCAR" -maxdepth 3 -name level.dat -printf '%h\n' | head -1)
+    [ -z "$MUNDO" ] && { echo "Ahí no hay un mundo de Minecraft (falta level.dat)."; rm -rf "$TMP"; exit 1; }
+    echo "Mundo encontrado: $MUNDO"
+    read -r -p "Esto guarda el mundo actual y pone este. ¿Seguro? escribe SI: " R; [ "$R" = "SI" ] || { echo "Cancelado."; rm -rf "$TMP"; exit 1; }
+    avisar_y_parar "El servidor se reinicia en 10 segundos para cambiar de mundo."
+    copia_mundo
+    sudo rm -rf "$SRV/world"
+    sudo cp -a "$MUNDO" "$SRV/world"
+    sudo rm -f "$SRV/world/session.lock"
+    sudo chown -R $USUARIO:$USUARIO "$SRV/world"
+    rm -rf "$TMP"
+    sudo systemctl start dedsafio
+    echo "Listo: el servidor arranca con el mundo nuevo. Míralo con: dedsafio log";;
+
+  respaldo)
+    sudo mkdir -p "$RESP"
+    if corriendo; then enviar "save-off"; enviar "save-all flush"; sleep 15; fi
+    F="$RESP/mundo-$(date +%Y-%m-%d_%H-%M).tar.gz"
+    sudo tar -czf "$F" -C "$SRV" world EasyAuth config ops.json whitelist.json banned-players.json server.properties 2>/dev/null || sudo tar -czf "$F" -C "$SRV" world
+    if corriendo; then enviar "save-on"; fi
+    ls -1t "$RESP"/mundo-[0-9]*.tar.gz 2>/dev/null | tail -n +13 | xargs -r sudo rm -f
+    echo "Copia guardada: $F";;
+
+  actualizar-comandos)
+    sudo curl -fsSL "https://raw.githubusercontent.com/$DESCARGAS_REPO/main/servidor/dedsafio" -o /usr/local/bin/dedsafio.nuevo \
+      && sudo chmod 755 /usr/local/bin/dedsafio.nuevo && sudo mv /usr/local/bin/dedsafio.nuevo /usr/local/bin/dedsafio \
+      && echo "Comandos actualizados.";;
+
+  *)
+    cat <<EOT
+Comandos del servidor Dedsafío:
+  dedsafio estado                 ¿está encendido? memoria, disco y mods
+  dedsafio consola                consola del servidor (salir: Ctrl+B y luego D)
+  dedsafio comando "..."          mandar un comando (ej: dedsafio comando "say hola")
+  dedsafio log                    ver lo que va pasando (salir: Ctrl+C)
+  dedsafio iniciar | parar | reiniciar
+  dedsafio actualizar             última versión del mod Dedsafío y reinicia
+  dedsafio instalar-mod <nombre>  instala un mod de Modrinth (ej: meowanti-xray)
+  dedsafio quitar-mod <nombre>    quita un mod
+  dedsafio mundo-nuevo [semilla]  guarda el mundo actual y crea uno nuevo
+  dedsafio cambiar-mundo <ruta>   pone un mundo tuyo (carpeta o .zip)
+  dedsafio respaldo               copia del mundo ahora (se hacen solas cada 6 horas)
+  dedsafio actualizar-comandos    baja la última versión de estos comandos
+EOT
+esac
