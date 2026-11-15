@@ -114,60 +114,13 @@ echo "eula=true" > "$SRV/eula.txt"
 
 # ----------------------------------------------------------------------------- comando dedsafio
 paso "Instalando el comando 'dedsafio'"
-cat > /usr/local/bin/dedsafio <<'EOS'
-#!/usr/bin/env bash
-# Manejo del servidor Dedsafío. Uso: dedsafio <orden>
-BASE=/opt/dedsafio; SRV=$BASE/servidor; RESP=$BASE/respaldos; USUARIO=minecraft
-DESCARGAS_REPO=Frankgamer1534/SammyMod-Descargas
-como_mc() { if [ "$(id -un)" = "$USUARIO" ]; then SHELL=/bin/bash "$@"; else sudo -u $USUARIO env SHELL=/bin/bash "$@"; fi; }
-enviar() { como_mc tmux -L dedsafio send-keys -t dedsafio "$*" Enter 2>/dev/null; }
-corriendo() { como_mc tmux -L dedsafio has-session -t dedsafio 2>/dev/null; }
-case "${1:-ayuda}" in
-  estado)
-    systemctl --no-pager status dedsafio | head -5
-    echo; free -h | head -2; echo; df -h "$SRV" | tail -1
-    systemctl is-active --quiet playit 2>/dev/null && echo "playit: activo" || echo "playit: apagado";;
-  consola)
-    echo "Entrando a la consola. Para SALIR sin apagar el servidor: Ctrl+B y luego D."; sleep 2
-    como_mc tmux -L dedsafio attach -t dedsafio;;
-  comando)
-    shift; enviar "$*" && echo "Enviado: $*";;
-  iniciar)   sudo systemctl start dedsafio;;
-  parar)     sudo systemctl stop dedsafio;;
-  reiniciar) sudo systemctl restart dedsafio;;
-  log)       tail -n "${2:-60}" -f "$SRV/logs/latest.log";;
-  actualizar)
-    echo "Buscando la última versión del mod..."
-    URL=$(curl -fsSL "https://api.github.com/repos/$DESCARGAS_REPO/releases?per_page=10" | jq -r '[.[].assets[] | select(.name|endswith(".jar"))][0].browser_download_url')
-    if [ -z "$URL" ] || [ "$URL" = "null" ]; then echo "No encontré el mod en $DESCARGAS_REPO"; exit 1; fi
-    NOMBRE=$(basename "$URL")
-    curl -fsSL -o "/tmp/$NOMBRE" "$URL"
-    sudo find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' -delete
-    sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
-    echo "Mod actualizado: $NOMBRE. Reiniciando el servidor..."
-    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos para actualizar el mod."; sleep 10; fi
-    sudo systemctl restart dedsafio; echo "Listo.";;
-  respaldo)
-    sudo mkdir -p "$RESP"
-    if corriendo; then enviar "save-off"; enviar "save-all flush"; sleep 15; fi
-    F="$RESP/mundo-$(date +%Y-%m-%d_%H-%M).tar.gz"
-    sudo tar -czf "$F" -C "$SRV" world EasyAuth config ops.json whitelist.json banned-players.json server.properties 2>/dev/null || sudo tar -czf "$F" -C "$SRV" world
-    if corriendo; then enviar "save-on"; fi
-    ls -1t "$RESP"/mundo-*.tar.gz 2>/dev/null | tail -n +13 | xargs -r sudo rm -f
-    echo "Copia guardada: $F";;
-  *)
-    cat <<EOT
-Comandos del servidor Dedsafío:
-  dedsafio estado        ¿está encendido? memoria y disco
-  dedsafio consola       ver la consola del servidor (salir: Ctrl+B y luego D)
-  dedsafio comando "..." mandar un comando (ej: dedsafio comando "say hola")
-  dedsafio log           ver lo que va pasando (salir: Ctrl+C)
-  dedsafio iniciar | parar | reiniciar
-  dedsafio actualizar    baja la última versión del mod y reinicia
-  dedsafio respaldo      copia del mundo ahora (se hacen solas cada 6 horas)
-EOT
-esac
-EOS
+AQUI=$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo .)
+if [ -f "$AQUI/dedsafio" ]; then
+  install -m 755 "$AQUI/dedsafio" /usr/local/bin/dedsafio
+else
+  curl -fsSL "https://raw.githubusercontent.com/$DESCARGAS_REPO/main/servidor/dedsafio" -o /usr/local/bin/dedsafio
+  chmod 755 /usr/local/bin/dedsafio
+fi
 chmod 755 /usr/local/bin/dedsafio
 
 # ----------------------------------------------------------------------------- mod actualizado
