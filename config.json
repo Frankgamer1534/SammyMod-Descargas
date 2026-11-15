@@ -1,0 +1,11 @@
+{
+  "version": "26.2",
+  "loader": "0.20.1",
+  "servidor": "",
+  "msClientId": "",
+  "permitirOtrosMods": false,
+  "mods": [
+    {"tipo": "github", "repo": "Frankgamer1534/SammyMod-Descargas"},
+    {"tipo": "modrinth", "proyecto": "fabric-api"}
+  ]
+}
