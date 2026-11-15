@@ -82,7 +82,23 @@ paso "Restaurando tu servidor"
 id -u $USUARIO >/dev/null 2>&1 || useradd --system --create-home --home-dir $BASE --shell /usr/sbin/nologin $USUARIO
 mkdir -p "$SRV" "$RESP"
 TMP=$(mktemp -d)
-unzip -q "$ZIP" -d "$TMP"
+# los zip hechos en Windows (Compress-Archive) usan "\" en las rutas: se extrae con Python corrigiéndolas
+python3 - "$ZIP" "$TMP" <<'PY'
+import os, sys, zipfile, shutil
+zip_path, destino = sys.argv[1], os.path.realpath(sys.argv[2])
+with zipfile.ZipFile(zip_path) as z:
+    for info in z.infolist():
+        nombre = info.filename.replace("\\", "/")
+        ruta = os.path.realpath(os.path.join(destino, nombre))
+        if not ruta.startswith(destino + os.sep):
+            continue
+        if nombre.endswith("/"):
+            os.makedirs(ruta, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(ruta), exist_ok=True)
+        with z.open(info) as src, open(ruta, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+PY
 ORIGEN=$(find "$TMP" -maxdepth 2 -type f -name 'server.properties' -printf '%h\n' | head -1)
 if [ -z "$ORIGEN" ]; then rojo "El respaldo no tiene server.properties; ¿es el zip correcto?"; exit 1; fi
 if [ -d "$SRV/world" ]; then
