@@ -137,7 +137,7 @@ chmod 755 /usr/local/bin/dedsafio
 paso "Poniendo la última versión del mod"
 URL=$(curl -fsSL "https://api.github.com/repos/$DESCARGAS_REPO/releases?per_page=10" | jq -r '[.[].assets[] | select(.name|endswith(".jar"))][0].browser_download_url' || true)
 if [ -n "$URL" ] && [ "$URL" != "null" ]; then
-  find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' -delete
+  find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' ! -iname 'dedsafio-staff*.jar' -delete
   curl -fsSL -o "$SRV/mods/$(basename "$URL")" "$URL" && verde "Mod: $(basename "$URL")"
 else
   echo "No pude bajar el mod; se queda el del respaldo."

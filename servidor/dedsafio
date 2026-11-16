@@ -60,7 +60,7 @@ case "${1:-ayuda}" in
     if [ -z "$URL" ] || [ "$URL" = "null" ]; then echo "No encontré el mod en $DESCARGAS_REPO"; exit 1; fi
     NOMBRE=$(basename "$URL")
     curl -fsSL -o "/tmp/$NOMBRE" "$URL" || { echo "No se pudo descargar."; exit 1; }
-    sudo find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' -delete
+    sudo find "$SRV/mods" -maxdepth 1 -iname 'dedsafio*.jar' ! -iname 'dedsafio-staff*.jar' -delete
     sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
     echo "Mod actualizado: $NOMBRE. Reiniciando el servidor..."
     if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos para actualizar el mod."; sleep 10; fi
@@ -192,26 +192,35 @@ PY
     sudo systemctl restart dedsafio; echo "Listo. Si en la lista sale el viejo, dale a Actualizar en Multijugador.";;
 
   staff)
-    # instala las herramientas de staff (todas de servidor; los jugadores no instalan nada)
-    #   Essentials Fabric -> ver/editar inventario (/isee, /esee), vanish (/vanish), ban, mochilas
-    #   AdminScope        -> espiar a un jugador en su vista (/spectate <jugador>)
-    #   Ledger            -> registro de quién rompió/puso/abrió cosas (como CoreProtect): /lb, /ledger
-    #   fabric-language-kotlin -> librería que necesita Ledger
-    # (congelar jugadores y proteger el spawn ya vienen dentro del mod Dedsafío)
-    for SLUG in fabric-language-kotlin essentialsfabric adminscope ledger; do
+    # Panel de staff (/staff): ver inventario y ender, congelar, espiar, invisible, tp, curar,
+    # advertir, expulsar, banear, modo de juego, estado del servidor y protección del spawn.
+    # Además Ledger: registro de quién rompió/puso/abrió cosas (/lb), con su librería de Kotlin.
+    # Solo van en el servidor: los jugadores no instalan nada.
+    echo "Instalando el panel de staff..."
+    curl -fsSL -o /tmp/dedsafio-staff.jar "https://raw.githubusercontent.com/$DESCARGAS_REPO/main/servidor/dedsafio-staff.jar" \
+      || { echo "No se pudo descargar el panel de staff."; exit 1; }
+    sudo find "$SRV/mods" -maxdepth 1 -iname 'dedsafio-staff*.jar' -delete
+    sudo install -o $USUARIO -g $USUARIO -m 644 /tmp/dedsafio-staff.jar "$SRV/mods/dedsafio-staff.jar"
+    echo "  instalado: dedsafio-staff.jar"
+    # ya no hacen falta (el panel trae lo mismo y así no hay dos "vanish" distintos)
+    for VIEJO in essentials adminscope; do
+      sudo find "$SRV/mods" -maxdepth 1 -iname "${VIEJO}*.jar" -print -delete | sed 's#.*/#  quitado: #'
+    done
+    for SLUG in fabric-language-kotlin ledger; do
       J=$(curl -fsSL -G "https://api.modrinth.com/v2/project/$SLUG/version" \
             --data-urlencode "game_versions=[\"$VERSION_MC\"]" --data-urlencode 'loaders=["fabric"]') || { echo "  $SLUG: no se pudo consultar"; continue; }
       URL=$(echo "$J" | jq -r '([.[]|select(.version_type=="release")] + .)[0].files | (map(select(.primary)) + .)[0].url // empty')
       NOMBRE=$(echo "$J" | jq -r '([.[]|select(.version_type=="release")] + .)[0].files | (map(select(.primary)) + .)[0].filename // empty')
       [ -z "$URL" ] && { echo "  $SLUG: sin versión para $VERSION_MC"; continue; }
       curl -fsSL -o "/tmp/$NOMBRE" "$URL" || { echo "  $SLUG: no se pudo descargar"; continue; }
+      sudo find "$SRV/mods" -maxdepth 1 -iname "${SLUG}-*.jar" -delete
       sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
       echo "  instalado: $NOMBRE"
     done
-    echo "Herramientas de staff instaladas. Reiniciando el servidor..."
+    echo "Reiniciando el servidor..."
     if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos."; sleep 10; fi
     sudo systemctl restart dedsafio
-    echo "Listo. Comandos: /vanish  /isee <jugador>  /esee <jugador>  /spectate <jugador>  /ban  (congelar y proteger: ver 'dedsafio ayuda').";;
+    echo "Listo. En el juego (como OP) escribe:  /staff";;
 
   respaldo)
     sudo mkdir -p "$RESP"
@@ -253,9 +262,7 @@ Comandos del servidor Dedsafío:
   dedsafio icono [imagen.png]     ícono del mod en la lista de servidores
   dedsafio optimizar              instala los mods de optimización y baja la distancia (8/6)
   dedsafio pregenerar [radio]     genera el mapa por adelantado (por defecto 1500 bloques)
-  dedsafio staff                  herramientas de staff (vanish, ver inventario, espiar, registro)
-                                    congelar: /dedsafio_congelar <jugador>  (y /dedsafio_descongelar)
-                                    proteger spawn: /dedsafio_proteger esquina1 | esquina2 | activar
+  dedsafio staff                  instala/actualiza el panel de staff (en el juego: /staff)
   dedsafio mundo-nuevo [semilla]  guarda el mundo actual y crea uno nuevo
   dedsafio cambiar-mundo <ruta>   pone un mundo tuyo (carpeta o .zip)
   dedsafio respaldo               copia del mundo ahora (se hacen solas cada 6 horas)
