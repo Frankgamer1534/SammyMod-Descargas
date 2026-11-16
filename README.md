@@ -8,7 +8,3 @@ Aquí están el **launcher** y el **mod** de Dedsafío Sammy Edition para Minecr
 3. La primera vez tarda un poco: descarga Minecraft, Fabric, Java y el mod. Después solo baja lo que cambie.
 
 El launcher se actualiza solo con cada versión nueva del mod.
-
-## Licencia
-Partes del mod usan contenido con licencia CC BY-NC-SA 4.0 (créditos dentro del jar).
-Este repositorio solo tiene los archivos para jugar, no el código.
