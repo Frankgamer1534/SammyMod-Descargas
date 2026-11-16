@@ -142,6 +142,34 @@ PY
     sudo systemctl start dedsafio
     echo "Listo: el servidor arranca con el mundo nuevo. Míralo con: dedsafio log";;
 
+  optimizar)
+    # instala los mods de optimización probados con el mod Dedsafío y ajusta la distancia
+    OPT="lithium:lithium ferrite-core:ferritecore krypton:krypton scalablelux:scalablelux c2me-fabric:c2me servercore:servercore vmp-fabric:vmp alternate-current:alternate spark:spark chunky:chunky"
+    for par in $OPT; do
+      SLUG=${par%%:*}; PAT=${par##*:}
+      J=$(curl -fsSL -G "https://api.modrinth.com/v2/project/$SLUG/version" \
+            --data-urlencode "game_versions=[\"$VERSION_MC\"]" --data-urlencode 'loaders=["fabric"]') || { echo "  $SLUG: no se pudo consultar"; continue; }
+      URL=$(echo "$J" | jq -r '.[0].files | (map(select(.primary)) + .)[0].url // empty')
+      NOMBRE=$(echo "$J" | jq -r '.[0].files | (map(select(.primary)) + .)[0].filename // empty')
+      [ -z "$URL" ] && { echo "  $SLUG: sin versión para $VERSION_MC"; continue; }
+      curl -fsSL -o "/tmp/$NOMBRE" "$URL" || { echo "  $SLUG: no se pudo descargar"; continue; }
+      sudo find "$SRV/mods" -maxdepth 1 -iname "*$PAT*.jar" -delete
+      sudo install -o $USUARIO -g $USUARIO -m 644 "/tmp/$NOMBRE" "$SRV/mods/$NOMBRE"
+      echo "  instalado: $NOMBRE"
+    done
+    VD="${2:-8}"; SD="${3:-6}"
+    sudo sed -i -E "s/^view-distance=.*/view-distance=$VD/; s/^simulation-distance=.*/simulation-distance=$SD/" "$SRV/server.properties"
+    grep -q '^network-compression-threshold=' "$SRV/server.properties" || echo "network-compression-threshold=256" | sudo tee -a "$SRV/server.properties" >/dev/null
+    echo "Distancia de visión $VD y de simulación $SD."
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos para optimizarlo."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo. Para ver el rendimiento en el juego: /spark tps";;
+
+  pregenerar)
+    # genera el mapa alrededor del spawn por adelantado (menos lag al explorar). dedsafio pregenerar [radio]
+    R="${2:-1500}"
+    enviar "chunky spawn"; enviar "chunky radius $R"; enviar "chunky start"
+    echo "Generando el mapa en un radio de $R bloques. Puede tardar bastante; mira el avance con: dedsafio log";;
+
   respaldo)
     sudo mkdir -p "$RESP"
     if corriendo; then enviar "save-off"; enviar "save-all flush"; sleep 15; fi
@@ -178,6 +206,8 @@ Comandos del servidor Dedsafío:
   dedsafio actualizar             última versión del mod Dedsafío y reinicia
   dedsafio instalar-mod <nombre>  instala un mod de Modrinth (ej: meowanti-xray)
   dedsafio quitar-mod <nombre>    quita un mod
+  dedsafio optimizar              instala los mods de optimización y baja la distancia (8/6)
+  dedsafio pregenerar [radio]     genera el mapa por adelantado (por defecto 1500 bloques)
   dedsafio mundo-nuevo [semilla]  guarda el mundo actual y crea uno nuevo
   dedsafio cambiar-mundo <ruta>   pone un mundo tuyo (carpeta o .zip)
   dedsafio respaldo               copia del mundo ahora (se hacen solas cada 6 horas)
