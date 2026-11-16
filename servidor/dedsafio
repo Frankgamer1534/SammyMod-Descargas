@@ -170,6 +170,27 @@ PY
     enviar "chunky spawn"; enviar "chunky radius $R"; enviar "chunky start"
     echo "Generando el mapa en un radio de $R bloques. Puede tardar bastante; mira el avance con: dedsafio log";;
 
+  jugadores)
+    # dedsafio jugadores <número>: cuántas personas pueden entrar a la vez
+    N="${2:-}"; echo "$N" | grep -qE '^[0-9]+$' || { echo "Uso: dedsafio jugadores <número>  (ahora: $(grep '^max-players=' "$SRV/server.properties" | cut -d= -f2))"; exit 1; }
+    if grep -q '^max-players=' "$SRV/server.properties"; then sudo sed -i "s/^max-players=.*/max-players=$N/" "$SRV/server.properties"; else echo "max-players=$N" | sudo tee -a "$SRV/server.properties" >/dev/null; fi
+    echo "Ahora pueden entrar hasta $N jugadores. Reiniciando el servidor..."
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo.";;
+
+  icono)
+    # dedsafio icono [ruta.png]: pone el ícono del mod (o una imagen tuya) en la lista de servidores
+    if [ -n "${2:-}" ]; then
+      [ -f "$2" ] || { echo "No existe $2"; exit 1; }
+      if command -v convert >/dev/null; then convert "$2" -resize 64x64! /tmp/server-icon.png; else cp "$2" /tmp/server-icon.png; fi
+    else
+      curl -fsSL -o /tmp/server-icon.png "https://raw.githubusercontent.com/$DESCARGAS_REPO/main/servidor/server-icon.png" || { echo "No se pudo descargar el ícono."; exit 1; }
+    fi
+    sudo install -o $USUARIO -g $USUARIO -m 644 /tmp/server-icon.png "$SRV/server-icon.png"
+    echo "Ícono puesto (tiene que ser PNG de 64x64). Reiniciando el servidor..."
+    if corriendo; then enviar "say §dEl servidor se reinicia en 10 segundos."; sleep 10; fi
+    sudo systemctl restart dedsafio; echo "Listo. Si en la lista sale el viejo, dale a Actualizar en Multijugador.";;
+
   respaldo)
     sudo mkdir -p "$RESP"
     if corriendo; then enviar "save-off"; enviar "save-all flush"; sleep 15; fi
@@ -206,6 +227,8 @@ Comandos del servidor Dedsafío:
   dedsafio actualizar             última versión del mod Dedsafío y reinicia
   dedsafio instalar-mod <nombre>  instala un mod de Modrinth (ej: meowanti-xray)
   dedsafio quitar-mod <nombre>    quita un mod
+  dedsafio jugadores <número>     cuántos pueden entrar a la vez (ej: 40)
+  dedsafio icono [imagen.png]     ícono del mod en la lista de servidores
   dedsafio optimizar              instala los mods de optimización y baja la distancia (8/6)
   dedsafio pregenerar [radio]     genera el mapa por adelantado (por defecto 1500 bloques)
   dedsafio mundo-nuevo [semilla]  guarda el mundo actual y crea uno nuevo
