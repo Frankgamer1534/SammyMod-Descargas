@@ -111,6 +111,16 @@ PLAYIT_TOML=$(find "$TMP" -maxdepth 2 -type f -name 'playit.toml' | head -1 || t
 if [ -n "$PLAYIT_TOML" ]; then mkdir -p /etc/playit; cp "$PLAYIT_TOML" /etc/playit/playit.toml; chmod 600 /etc/playit/playit.toml; fi
 rm -rf "$TMP"
 echo "eula=true" > "$SRV/eula.txt"
+# llave del servidor: sin ella el mod no deja arrancar el servidor
+mkdir -p "$SRV/config"
+if [ -n "${DEDSAFIO_LLAVE:-}" ]; then
+  printf '%s\n' "$DEDSAFIO_LLAVE" > "$SRV/config/dedsafio_llave.txt"
+elif [ ! -s "$SRV/config/dedsafio_llave.txt" ] && [ -t 0 ]; then
+  read -r -p "Escribe la llave del servidor (te la dio Claude): " LL
+  [ -n "$LL" ] && printf '%s\n' "$LL" > "$SRV/config/dedsafio_llave.txt"
+fi
+[ -f "$SRV/config/dedsafio_llave.txt" ] && chmod 600 "$SRV/config/dedsafio_llave.txt"
+[ -s "$SRV/config/dedsafio_llave.txt" ] || rojo "Aviso: falta la llave del servidor. Ponla luego con: sudo dedsafio llave <clave>"
 
 # ----------------------------------------------------------------------------- comando dedsafio
 paso "Instalando el comando 'dedsafio'"
