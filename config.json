@@ -12,6 +12,12 @@
     {
       "tipo": "modrinth",
       "proyecto": "fabric-api"
+    },
+    {
+      "tipo": "url",
+      "nombre": "dedsafio-cliente.jar",
+      "url": "https://raw.githubusercontent.com/Frankgamer1534/SammyMod-Descargas/main/cliente/dedsafio-cliente-1.0.0.jar",
+      "sha1": "0f25e2e23d02885198dad86ca573e8429bc4a1d6"
     }
   ]
 }
