@@ -172,6 +172,11 @@ if [ "$TOTAL_MB" -lt 6000 ]; then
   sed -i 's/^view-distance=.*/view-distance=8/; s/^simulation-distance=.*/simulation-distance=6/' "$SRV/server.properties"
 fi
 
+# hasta 40 jugadores y el ícono del mod en la lista de servidores
+if grep -q '^max-players=' "$SRV/server.properties"; then sed -i 's/^max-players=.*/max-players=40/' "$SRV/server.properties"; else echo "max-players=40" >> "$SRV/server.properties"; fi
+curl -fsSL -o "$SRV/server-icon.png" "https://raw.githubusercontent.com/Frankgamer1534/SammyMod-Descargas/main/servidor/server-icon.png" || true
+chown $USUARIO:$USUARIO "$SRV/server-icon.png" 2>/dev/null || true
+
 # ----------------------------------------------------------------------------- servicio
 paso "Dejando el servidor como servicio automático"
 cat > /etc/systemd/system/dedsafio.service <<EOS
