@@ -54,6 +54,7 @@ case "${1:-ayuda}" in
   log)       tail -n "${2:-60}" -f "$SRV/logs/latest.log";;
 
   actualizar)
+    if ! sudo test -s "$SRV/config/dedsafio_llave.txt"; then echo "Falta la llave del servidor: primero ejecuta  sudo dedsafio llave <clave>"; exit 1; fi
     echo "Buscando la última versión del mod..."
     URL=$(curl -fsSL "https://api.github.com/repos/$DESCARGAS_REPO/releases?per_page=10" | jq -r '[.[].assets[] | select(.name|endswith(".jar"))][0].browser_download_url')
     if [ -z "$URL" ] || [ "$URL" = "null" ]; then echo "No encontré el mod en $DESCARGAS_REPO"; exit 1; fi
@@ -150,6 +151,16 @@ PY
     ls -1t "$RESP"/mundo-[0-9]*.tar.gz 2>/dev/null | tail -n +13 | xargs -r sudo rm -f
     echo "Copia guardada: $F";;
 
+  llave)
+    # dedsafio llave <clave>: guarda la llave del servidor (sin ella el mod no deja arrancar el servidor)
+    CLAVE="${2:-}"; [ -z "$CLAVE" ] && { read -r -p "Escribe la llave del servidor: " CLAVE; }
+    [ -z "$CLAVE" ] && { echo "No escribiste ninguna llave."; exit 1; }
+    sudo mkdir -p "$SRV/config"
+    printf '%s\n' "$CLAVE" | sudo tee "$SRV/config/dedsafio_llave.txt" >/dev/null
+    sudo chown $USUARIO:$USUARIO "$SRV/config/dedsafio_llave.txt"; sudo chmod 600 "$SRV/config/dedsafio_llave.txt"
+    echo "Llave guardada. Reiniciando el servidor..."
+    sudo systemctl restart dedsafio; echo "Listo.";;
+
   actualizar-comandos)
     sudo curl -fsSL "https://raw.githubusercontent.com/$DESCARGAS_REPO/main/servidor/dedsafio" -o /usr/local/bin/dedsafio.nuevo \
       && sudo chmod 755 /usr/local/bin/dedsafio.nuevo && sudo mv /usr/local/bin/dedsafio.nuevo /usr/local/bin/dedsafio \
@@ -170,6 +181,7 @@ Comandos del servidor Dedsafío:
   dedsafio mundo-nuevo [semilla]  guarda el mundo actual y crea uno nuevo
   dedsafio cambiar-mundo <ruta>   pone un mundo tuyo (carpeta o .zip)
   dedsafio respaldo               copia del mundo ahora (se hacen solas cada 6 horas)
+  dedsafio llave <clave>          guarda la llave del servidor (necesaria para que arranque)
   dedsafio actualizar-comandos    baja la última versión de estos comandos
 EOT
 esac
