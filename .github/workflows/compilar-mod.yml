@@ -1,0 +1,105 @@
+name: compilar-mod
+# Compila el mod desde el código privado, lo ofusca, lo prueba en un servidor real y publica el jar aquí.
+# En este repositorio público no se muestra código: los registros completos se guardan en el repositorio privado.
+on:
+  workflow_dispatch:
+    inputs:
+      rama:
+        description: "Rama del código"
+        default: "main"
+      publicar:
+        description: "Publicar el jar para los jugadores"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency: compilar-mod
+
+jobs:
+  compilar:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: comprobar el token
+        env:
+          T: ${{ secrets.CODIGO_TOKEN }}
+        run: '[ -n "$T" ] || { echo "Falta el secreto CODIGO_TOKEN (Settings -> Secrets and variables -> Actions)"; exit 1; }'
+
+      - name: bajar el código (privado)
+        uses: actions/checkout@v6
+        with:
+          repository: Frankgamer1534/SammyMod
+          ref: ${{ inputs.rama }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          path: codigo
+          persist-credentials: false
+
+      - name: ocultar la llave en los registros
+        run: echo "::add-mask::$(tr -d '\n\r' < codigo/llave-servidor.txt)"
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+
+      - name: compilar y ofuscar
+        working-directory: codigo
+        run: |
+          mkdir -p ../registros
+          chmod +x ./gradlew
+          ./gradlew build --stacktrace > ../registros/build.log 2>&1 && echo "COMPILA" || { echo "NO COMPILA (el detalle está en el repositorio privado, rama ci-publico)"; exit 1; }
+          ./gradlew ofuscar --no-configuration-cache --stacktrace > ../registros/ofuscar.log 2>&1 && echo "OFUSCADO" || { echo "NO SE PUDO OFUSCAR"; exit 1; }
+          ls build/ofuscado/*.jar | sed 's#.*/#jar: #'
+
+      - name: probar el jar ofuscado en un servidor real
+        run: |
+          mkdir -p srv/mods && cd srv
+          INST=$(curl -s https://meta.fabricmc.net/v2/versions/installer | jq -r '.[0].version')
+          curl -sfL -o server.jar "https://meta.fabricmc.net/v2/versions/loader/26.2/0.20.1/$INST/server/jar"
+          FAPI=$(grep fabric_api_version ../codigo/gradle.properties | cut -d= -f2)
+          curl -sfL -o mods/fabric-api.jar "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/$FAPI/fabric-api-$FAPI.jar"
+          cp ../codigo/build/ofuscado/*.jar mods/
+          echo "eula=true" > eula.txt
+          printf "online-mode=false\nspawn-protection=0\n" > server.properties
+          timeout 600 java -Xmx3G -jar server.jar --nogui > ../registros/servidor-sin-llave.log 2>&1 || true
+          grep -q "no está autorizado" ../registros/servidor-sin-llave.log && echo "CANDADO: sin llave no arranca (bien)" || { echo "EL CANDADO NO FUNCIONÓ"; exit 1; }
+          rm -rf world logs && mkdir -p config && cp ../codigo/llave-servidor.txt config/dedsafio_llave.txt
+          timeout 900 java -Dd3.smoke=true -Xmx3G -jar server.jar --nogui > ../registros/servidor.log 2>&1 || true
+          echo "funciones que no cargan: $(grep -c 'Failed to load function' ../registros/servidor.log || true)"
+          grep -q "D3-SMOKE-OK" ../registros/servidor.log && echo "SERVIDOR: arranca con la llave (bien)" || { echo "EL SERVIDOR NO ARRANCÓ"; exit 1; }
+
+      - name: probar el juego completo (cliente)
+        continue-on-error: true
+        working-directory: codigo
+        run: |
+          sudo apt-get update -q > /dev/null && sudo apt-get install -y -q xvfb mesa-utils libgl1-mesa-dri > /dev/null
+          timeout 1500 ./gradlew runClientGameTest --stacktrace > ../registros/cliente.log 2>&1 || true
+          mkdir -p ../registros/capturas && cp build/run/clientGameTest/screenshots/*.png ../registros/capturas/ 2>/dev/null || true
+          echo "capturas: $(ls ../registros/capturas | wc -l)"
+          grep -q "D3-CLIENT-TEST-OK" ../registros/cliente.log && echo "CLIENTE: pruebas completas (bien)" || echo "CLIENTE: las pruebas no terminaron (ver el repositorio privado)"
+
+      - name: guardar los registros en el repositorio privado
+        if: always()
+        env:
+          T: ${{ secrets.CODIGO_TOKEN }}
+        run: |
+          mkdir -p registros/mapa && cp codigo/build/ofuscado-mapa/mapa.txt registros/mapa/ 2>/dev/null || true
+          for f in registros/*.log; do [ -f "$f" ] && tail -c 400000 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
+          echo "$(git -C codigo rev-parse HEAD) ${{ job.status }} $(date -u +%FT%TZ)" > registros/status.txt
+          cd registros && git init -q -b ci-publico && git add -A
+          git -c user.name=Frankgamer1534 -c user.email=bermudezgeremy2@gmail.com commit -qm "registro de la compilación" 
+          git push -q -f "https://x-access-token:${T}@github.com/Frankgamer1534/SammyMod.git" ci-publico && echo "registros guardados en el repositorio privado"
+
+      - name: número de versión
+        id: ver
+        run: echo "n=$((150 + ${{ github.run_number }}))" >> "$GITHUB_OUTPUT"
+
+      - name: publicar el jar para los jugadores
+        if: success() && inputs.publicar
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mod-build-${{ steps.ver.outputs.n }}
+          name: Dedsafío Sammy Edition build ${{ steps.ver.outputs.n }}
+          make_latest: false
+          files: codigo/build/ofuscado/*.jar
