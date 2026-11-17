@@ -1,0 +1,9 @@
+name: prueba-ci
+on:
+  push:
+    branches: [prueba-ci]
+jobs:
+  hola:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Actions funciona en el repo publico"; java -version 2>&1 | head -1; nproc; free -m | head -2
